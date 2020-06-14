@@ -20,7 +20,8 @@ object filter extends App {
 
   val kafkaParams = Map(
     "kafka.bootstrap.servers" -> "10.0.1.13:6667",
-    "subscribe" -> topic
+    "subscribe" -> topic,
+    "startingOffsets" -> s""" { "$topic": { "0": $offset } } """
   )
 
   val inputRaw = spark
