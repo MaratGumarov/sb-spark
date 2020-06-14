@@ -15,6 +15,8 @@ object filter extends App {
   val topic = sc.getConf.get("spark.filter.topic_name")
   val offset = sc.getConf.get("spark.filter.offset")
   val target = sc.getConf.get("spark.filter.output_dir_prefix")
+  val fs = FileSystem.get(URI.create(target), spark.sparkContext.hadoopConfiguration)
+  fs.delete(new Path(target), true)
 
   val kafkaParams = Map(
     "kafka.bootstrap.servers" -> "10.0.1.13:6667",
@@ -49,7 +51,6 @@ object filter extends App {
 
   val path = new Path(target)
 
-  val fs = FileSystem.get(URI.create(target), spark.sparkContext.hadoopConfiguration)
   fs
     .listStatus(path)
     .filter(_.isDirectory)
