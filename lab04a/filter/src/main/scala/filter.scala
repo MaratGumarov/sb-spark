@@ -41,5 +41,5 @@ object filter extends App{
     views.write
         .partitionBy("month_col", "day_col")
         .mode("overwrite")
-        .parquet(target + "/view")
+        .json(target + "/view")
 }
