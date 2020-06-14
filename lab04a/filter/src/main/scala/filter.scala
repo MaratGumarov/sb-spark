@@ -26,13 +26,12 @@ object filter extends App{
       .select(col("value").cast("String")).as[String]
 
     val parsedInput = spark.read.json(rawJsons)
-      .withColumn("month_col", from_unixtime('timestamp/1000, "MM"))
-      .withColumn("day_col", from_unixtime('timestamp/1000, "DD"))
+      .withColumn("date", from_unixtime('timestamp/1000, "YYYYMMDD"))
 
     val buys = parsedInput.filter(col("event_type") === "buy")
     buys.show(5, truncate = false)
     buys.write
-      .partitionBy("month_col", "day_col")
+      .partitionBy("date")
       .mode("overwrite")
       .parquet(target + "/buy")
 
