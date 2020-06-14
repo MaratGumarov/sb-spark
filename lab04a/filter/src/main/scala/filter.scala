@@ -49,7 +49,6 @@ object filter extends App {
 
 
   val views = parsedInput.filter(col("event_type") === "view")
-  views.show(5, truncate = false)
   views.write
     .partitionBy("date_part")
     .mode("overwrite")
