@@ -37,7 +37,7 @@ object filter extends App {
   buys.write
     .partitionBy("date_part")
     .mode("overwrite")
-    .parquet(target + "/buy")
+    .json(target + "/buy")
 
 
   val views = parsedInput.filter(col("event_type") === "view")
