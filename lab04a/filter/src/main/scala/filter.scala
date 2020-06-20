@@ -1,21 +1,69 @@
-import org.apache.spark.SparkContext
+import java.net.URI
 
-object filter extends App{
-    val spark = SparkContext.getOrCreate()
+import org.apache.hadoop.fs.{FileSystem, Path}
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.functions._
 
 
-    //spark-submit
-    // --conf spark.filter.topic_name=lab04_input_data
-    // --conf spark.filter.offset=earliest
-    // --conf spark.filter.output_dir_prefix=/user/name.surname/visits
-    // --class filter
-    // --packages
-    //      org.apache.spark:spark-sql-kafka-0-10_2.11:2.4.5
-    //      .target/scala-2.11/filter_2.11-1.0.jar
-    println("spark.filter.topic_name=" + spark.getConf.get("spark.filter.topic_name"))
-    println("filter.topic_name" + spark.getConf.get("filter.topic_name"))
+object filter extends App {
+  val spark = SparkSession.builder().getOrCreate()
 
-//    val kafkaParams = Map(
-//        "kafka.bootstrap.servers" -> "10.0.1.13:6667",
-//        "subscribe" -> "lab04_input_data"
+  import spark.implicits._
+
+  val sc = spark.sparkContext
+
+  val topic = sc.getConf.get("spark.filter.topic_name")
+  val offset = sc.getConf.get("spark.filter.offset")
+  val target = sc.getConf.get("spark.filter.output_dir_prefix")
+  val fs = FileSystem.get(URI.create(target), spark.sparkContext.hadoopConfiguration)
+  fs.delete(new Path(target), true)
+
+  val kafkaParams = Map(
+    "kafka.bootstrap.servers" -> "10.0.1.13:6667",
+    "subscribe" -> topic,
+    "startingOffsets" -> {
+      if (offset == "earliest")
+        offset
+      else
+        s""" { "$topic": { "0": $offset } } """
+    }
+  )
+
+  val inputRaw = spark
+    .read.format("kafka")
+    .options(kafkaParams)
+    .load
+
+  val rawJsons = inputRaw
+    .select(col("value").cast("String")).as[String]
+
+  val parsedInput = spark.read.json(rawJsons)
+    .withColumn("date", from_unixtime('timestamp / 1000, "YYYYMMdd"))
+    .withColumn("date_part", from_unixtime('timestamp / 1000, "YYYYMMdd"))
+
+  val buys = parsedInput.filter(col("event_type") === "buy")
+  buys.write
+    .partitionBy("date_part")
+    .mode("overwrite")
+    .json(target + "/buy")
+
+
+  val views = parsedInput.filter(col("event_type") === "view")
+  views.show(5, truncate = false)
+  views.write
+    .partitionBy("date_part")
+    .mode("overwrite")
+    .json(target + "/view")
+
+  val path = new Path(target)
+
+  fs
+    .listStatus(path)
+    .filter(_.isDirectory)
+    .map(_.getPath)
+    .flatMap(d => fs.listStatus(d))
+    .filter(_.isDirectory)
+    .map(_.getPath)
+    .map(s => fs.rename(s, new Path(s.getParent, s.getName.replace("date_part=", ""))))
+
 }
