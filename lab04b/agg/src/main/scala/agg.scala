@@ -77,8 +77,8 @@ object agg extends App {
       .writeStream
       .outputMode("update")
       .format("kafka")
-      //       .trigger(Trigger.ProcessingTime("10 seconds"))
-      .trigger(Trigger.Once)
+             .trigger(Trigger.ProcessingTime("10 seconds"))
+//      .trigger(Trigger.Once)
       .outputMode("complete")
       .option("kafka.bootstrap.servers", "10.0.1.13:6667")
       .option("checkpointLocation", s"chk/lab04b")
