@@ -36,8 +36,8 @@ object agg extends App {
 
     val options = Map(
       "kafka.bootstrap.servers" -> "10.0.1.13:6667",
-      "subscribe" -> "lab04b_input_data",
-      //         "startingOffsets" -> "earliest",
+      "subscribe" -> "marat_gumarov",
+//               "startingOffsets" -> "earliest",
       "startingOffsets" -> "latest",
       "maxOffsetsPerTrigger" -> "100"
     )
