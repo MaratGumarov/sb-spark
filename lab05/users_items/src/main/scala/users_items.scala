@@ -59,7 +59,7 @@ object users_items extends App {
 
     val result = if (mode == "1") {
         val lastDay = getLastDay(outputDir)
-        val lastData = spark.read.parquet(outputDir + lastDay)
+        val lastData = spark.read.parquet(outputDir + "/" + lastDay)
         lastData
           .union(aggregated)
           .groupBy("uid")
