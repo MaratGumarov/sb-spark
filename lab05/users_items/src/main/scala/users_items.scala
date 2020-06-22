@@ -13,17 +13,21 @@ object users_items extends App {
     val outputDir = conf.get("spark.users_items.output_dir")
     val mode = conf.get("spark.users_items.update")
 
-    val inputRawBuy = spark.read.json(inputDir + "/buy/[0-9]*")
-    val inputRawView = spark.read.json(inputDir + "/view/[0-9]*")
-
     val fs = FileSystem.get(URI.create(inputDir), spark.sparkContext.hadoopConfiguration)
     fs.listFiles(new Path(inputDir), false)
 
-    val maxDate = fs.listStatus(new Path(inputDir + "/view"))
-      .toList
-      .filter(_.isDirectory)
-      .map(_.getPath.getName)
-      .max
+    val inputRawBuy = spark.read.json(inputDir + "/buy/[0-9]*")
+    val inputRawView = spark.read.json(inputDir + "/view/[0-9]*")
+
+    private def getLastDay(dir: String): String = {
+        fs.listStatus(new Path(dir))
+          .toList
+          .filter(_.isDirectory)
+          .map(_.getPath.getName)
+          .max
+    }
+
+    val maxDate = getLastDay(inputDir + "/view")
 
     import org.apache.spark.sql.functions._
 
@@ -53,8 +57,16 @@ object users_items extends App {
 
     val aggregated = aggregated_buy.join(aggregated_view,Seq("uid"),"outer")
 
-    aggregated
-        .na.fill(0, aggregated.columns)
+    val result = if (mode == "1") {
+        val lastDay = getLastDay(outputDir)
+        val lastData = spark.read.parquet(outputDir + lastDay)
+        lastData.join(aggregated, Seq("uid"), "outer")
+    } else {
+        aggregated
+    }
+
+    result
+      .na.fill(0, aggregated.columns)
       .write
       .mode("overwrite")
       .parquet(outputDir + "/" + maxDate)
