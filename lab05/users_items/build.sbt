@@ -1,4 +1,4 @@
-name := "agg"
+name := "users_items"
 
 version := "1.0"
 
