@@ -13,13 +13,13 @@ object users_items extends App {
     val outputDir = conf.get("spark.users_items.output_dir")
     val mode = conf.get("spark.users_items.update")
 
-    val inputRawBuy = spark.read.json("visits/buy/[0-9]*")
-    val inputRawView = spark.read.json("visits/view/[0-9]*")
+    val inputRawBuy = spark.read.json(inputDir + "/buy/[0-9]*")
+    val inputRawView = spark.read.json(inputDir + "/view/[0-9]*")
 
     val fs = FileSystem.get(URI.create(inputDir), spark.sparkContext.hadoopConfiguration)
     fs.listFiles(new Path(inputDir), false)
 
-    val dir = fs.listStatus(new Path(inputDir))
+    val maxDate = fs.listStatus(new Path(inputDir + "/view"))
       .toList
       .filter(_.isDirectory)
       .map(_.getPath.getName)
@@ -54,7 +54,8 @@ object users_items extends App {
     val aggregated = aggregated_buy.join(aggregated_view,Seq("uid"),"outer")
 
     aggregated
+      .na.fill(0, aggregated.columns)
       .write
       .mode("overwrite")
-      .json(outputDir)
+      .json(outputDir + "/" + maxDate)
 }
