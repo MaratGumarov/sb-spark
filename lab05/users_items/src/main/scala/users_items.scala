@@ -1,77 +1,90 @@
-import java.net.URI
-
-import org.apache.hadoop.fs.{FileSystem, Path}
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{Column, DataFrame, SaveMode, SparkSession}
+import org.apache.spark.sql.functions._
 
 object users_items extends App {
 
-    val spark = SparkSession.builder().getOrCreate()
-    val context = spark.sparkContext
-    val conf = context.getConf
+    val spark = SparkSession
+      .builder()
+      .appName("Spark SQL users items")
+      .master("local[*]")
+      .getOrCreate()
 
-    val inputDir = conf.get("spark.users_items.input_dir")
-    val outputDir = conf.get("spark.users_items.output_dir")
-    val mode = conf.get("spark.users_items.update")
+    spark.conf.set("spark.sql.session.timeZone", "UTC")
 
-    val fs = FileSystem.get(URI.create(inputDir), spark.sparkContext.hadoopConfiguration)
-    fs.listFiles(new Path(inputDir), false)
+    var outDir: String = spark.conf.get("spark.users_items.output_dir")
+    var inDir: String = spark.conf.get("spark.users_items.input_dir")
 
-    val inputRawBuy = spark.read.json(inputDir + "/buy/[0-9]*")
-    val inputRawView = spark.read.json(inputDir + "/view/[0-9]*")
+    println("out dir param is: " + outDir)
+    println("inp dir param is: " + inDir)
 
-    private def getLastDay(dir: String): String = {
-        fs.listStatus(new Path(dir))
-          .toList
-          .filter(_.isDirectory)
-          .map(_.getPath.getName)
-          .max
+    //задать дефолтный режим 1, а если задан параметр спарк то переопределить его
+    val mode: String = try {
+        spark.conf.get("spark.users_items.update", "1")
+    } catch {
+        case _: Throwable => println("mode default")
+            "1"
     }
 
-    val maxDate = getLastDay(inputDir + "/view")
+    def readJson(dir: String): DataFrame = {
+        spark.read.json(dir)
+          .na.drop(Seq("uid"))
+          .withColumn("item_id", lower(col("item_id")))
+          .withColumn("item_id", regexp_replace(col("item_id"), lit("[- ]"), lit("_")))
+    }
 
-    import org.apache.spark.sql.functions._
+    val sdfBuy = readJson(s"$inDir/buy/**/")
+    val sdfView = readJson(s"$inDir/view/**/")
 
-    val aggregated_buy = inputRawBuy
-      .withColumn("item_id_norm",
-          regexp_replace(
-              regexp_replace(lower(col("item_id")),
-                  "-| ",
-                  "_"),
-              "^",
-              "buy_"))
-      .groupBy("uid")
-      .pivot("item_id_norm")
-      .agg(count(col("item_id_norm")))
-
-    val aggregated_view = inputRawView
-      .withColumn("item_id_norm",
-          regexp_replace(
-              regexp_replace(lower(col("item_id")),
-                  "-| ",
-                  "_"),
-              "^",
-              "view_"))
-      .groupBy("uid")
-      .pivot("item_id_norm")
-      .agg(count(col("item_id_norm")))
-
-    val aggregated = aggregated_buy.join(aggregated_view,Seq("uid"),"outer")
-
-    val result = if (mode == "1") {
-        val lastDay = getLastDay(outputDir)
-        val lastData = spark.read.parquet(outputDir + "/" + lastDay)
-        lastData
-          .union(aggregated)
+    def pivotDF(dataFrame: DataFrame): DataFrame = {
+        dataFrame
           .groupBy("uid")
-          .agg(aggregated.columns.filter(_!="uid").map(t => t -> "sum").toMap)
-          .toDF(aggregated.columns.toSeq: _*)
-    } else {
-        aggregated
+          .pivot("item_id")
+          .agg(count("uid"))
     }
 
-    result
-      .na.fill(0, aggregated.columns)
-      .write
-      .mode("overwrite")
-      .parquet(outputDir + "/" + maxDate)
+    val buyPiv = pivotDF(sdfBuy)
+    val viewPiv = pivotDF(sdfView)
+
+    val oldColumnsBuy = buyPiv.columns
+    val oldColumnsView = viewPiv.columns
+
+    def formatColumnNames(cols: Array[String], dfType: String): Array[String] = {
+        cols
+          .map(col =>  if (col.equals("uid")) col else dfType + col)
+    }
+
+    val newColumnsBuy = formatColumnNames(oldColumnsBuy,"buy_")
+    val newColumnsView = formatColumnNames(oldColumnsView,"view_")
+
+    def getColumns(oldCols: Array[String], newCols: Array[String]): Array[Column] = {
+        oldCols.zip(newCols).map(f => col(f._1).as(f._2))
+    }
+
+    val columnsBuy = getColumns(oldColumnsBuy, newColumnsBuy)
+    val columnsView = getColumns(oldColumnsView, newColumnsView)
+
+    val buyRenamed = buyPiv.select(columnsBuy: _*).na.fill(0, newColumnsBuy)
+    val viewRenamed = viewPiv.select(columnsView: _*).na.fill(0, newColumnsView)
+
+    val fullJoin = buyRenamed.join(viewRenamed, Seq("uid"), "outer")
+
+    val fullJoinCols = fullJoin.columns
+
+    val dfAll = fullJoin.na.fill(0, fullJoinCols)
+
+    val maxDate = spark.read.json(s"$inDir/**/**")
+      .agg(max(col("date"))).first().getString(0)
+
+    if (mode == "0") {
+        dfAll.coalesce(1).write.mode(SaveMode.Overwrite).parquet(s"$outDir/$maxDate")
+    }
+    else if (mode == "1") {
+        val previousDF = spark.read.parquet(s"$outDir/**")
+        val previousUid = previousDF.select(col("uid")).rdd.map(r => r(0)).collect()
+        val dfAppend = dfAll.where(!col("uid").isin(previousUid: _*))
+        println("dfAppend schema is:")
+        dfAppend.printSchema()
+        dfAppend.coalesce(1).write.mode(SaveMode.Overwrite).parquet(s"$outDir/$maxDate")
+    }
+
 }
