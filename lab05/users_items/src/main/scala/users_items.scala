@@ -54,8 +54,8 @@ object users_items extends App {
     val aggregated = aggregated_buy.join(aggregated_view,Seq("uid"),"outer")
 
     aggregated
-      .na.fill(0, aggregated.columns)
+        .na.fill(0, aggregated.columns)
       .write
       .mode("overwrite")
-      .json(outputDir + "/" + maxDate)
+      .parquet(outputDir + "/" + maxDate)
 }
