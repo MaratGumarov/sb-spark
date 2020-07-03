@@ -51,7 +51,7 @@ object test extends App {
     df.toJSON.writeStream
       .outputMode("update")
       .format("kafka")
-      .option("checkpointLocation", "chk/svetlana_akselrod")
+      .option("checkpointLocation", "chk/chk1")
       .option("kafka.bootstrap.servers", "10.0.1.13:6667")
       .option("topic", outputTopicName)
       .trigger(Trigger.ProcessingTime("5 seconds"))
