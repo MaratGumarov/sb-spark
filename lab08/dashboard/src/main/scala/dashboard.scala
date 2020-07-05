@@ -1,6 +1,6 @@
 import org.apache.spark.sql.SparkSession
 
-object EsWrite extends App {
+object dashboard extends App {
 
   val spark = SparkSession.builder().getOrCreate()
 
